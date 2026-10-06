@@ -7,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
+using Microsoft.Office.Interop.Outlook;
+using OutlookApp = Microsoft.Office.Interop.Outlook.Application;
 
 namespace OutlookEventForwarder;
 
@@ -19,9 +21,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<FilterItem> _currentFilterItems = new();
     private string? _currentFilterColumn;
     private int _lastClickedIndex = -1;
-    private dynamic? _outlookApp;
-
-    private const int OlFolderCalendar = 9;
+    private OutlookApp? _outlookApp;
 
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -49,15 +49,10 @@ public partial class MainWindow : Window
         SaveColumnWidths();
     }
 
-    private dynamic GetOutlookApp()
+    private OutlookApp GetOutlookApp()
     {
         if (_outlookApp != null) return _outlookApp;
-
-        var type = Type.GetTypeFromProgID("Outlook.Application", true)
-            ?? throw new InvalidOperationException("Outlook is not installed.");
-        _outlookApp = Activator.CreateInstance(type)
-            ?? throw new InvalidOperationException("Failed to start Outlook.");
-
+        _outlookApp = new OutlookApp();
         return _outlookApp;
     }
 
@@ -70,48 +65,51 @@ public partial class MainWindow : Window
             return;
         }
 
-        dynamic? calendarItems = null;
-        dynamic? calendarFolder = null;
-        dynamic? ns = null;
+        Items? calendarItems = null;
+        MAPIFolder? calendarFolder = null;
+        NameSpace? ns = null;
 
         try
         {
             _allEvents.Clear();
             _events.Clear();
             _activeFilters.Clear();
-            dynamic app = GetOutlookApp();
+            var app = GetOutlookApp();
             ns = app.GetNamespace("MAPI");
-            calendarFolder = ns.GetDefaultFolder(OlFolderCalendar);
+            calendarFolder = ns.GetDefaultFolder(OlDefaultFolders.olFolderCalendar);
             calendarItems = calendarFolder.Items;
 
             calendarItems.Sort("[Start]", false);
-            calendarItems.IncludeRecurrences = true;
+            calendarItems.IncludeRecurrences = false;
 
             var from = DateFrom.SelectedDate.Value.ToString("g");
             var to = DateTo.SelectedDate.Value.AddDays(1).ToString("g");
             var filter = $"[Start] >= '{from}' AND [End] <= '{to}'";
             var subjectFilter = SubjectFilter.Text.Trim();
 
-            dynamic? item = calendarItems.Find(filter);
+            object? item = calendarItems.Find(filter);
             while (item != null)
             {
                 try
                 {
-                    string? subject = (string?)item.Subject;
-                    if (string.IsNullOrEmpty(subjectFilter) ||
-                        (subject != null && subject.Contains(subjectFilter, StringComparison.OrdinalIgnoreCase)))
+                    if (item is AppointmentItem appt)
                     {
-                        var ev = new CalendarEvent
+                        var subject = appt.Subject;
+                        if (string.IsNullOrEmpty(subjectFilter) ||
+                            (subject != null && subject.Contains(subjectFilter, StringComparison.OrdinalIgnoreCase)))
                         {
-                            Subject = subject ?? "(No Subject)",
-                            Start = (DateTime)item.Start,
-                            End = (DateTime)item.End,
-                            Location = (string?)item.Location ?? "",
-                            Organizer = (string?)item.Organizer ?? "",
-                            EntryId = (string)item.EntryID
-                        };
-                        _allEvents.Add(ev);
-                        _events.Add(ev);
+                            var ev = new CalendarEvent
+                            {
+                                Subject = subject ?? "(No Subject)",
+                                Start = appt.Start,
+                                End = appt.End,
+                                Location = appt.Location ?? "",
+                                Organizer = appt.Organizer ?? "",
+                                EntryId = appt.EntryID
+                            };
+                            _allEvents.Add(ev);
+                            _events.Add(ev);
+                        }
                     }
                 }
                 finally
@@ -341,34 +339,60 @@ public partial class MainWindow : Window
 
         if (confirm != MessageBoxResult.Yes) return;
 
-        dynamic? ns = null;
+        NameSpace? ns = null;
         try
         {
             BtnForward.IsEnabled = false;
-            dynamic app = GetOutlookApp();
+            var app = GetOutlookApp();
             ns = app.GetNamespace("MAPI");
             int sent = 0;
             int failed = 0;
 
             foreach (var ev in selectedEvents)
             {
-                dynamic? appt = null;
-                dynamic? forward = null;
+                AppointmentItem? appt = null;
                 try
                 {
-                    appt = ns.GetItemFromID(ev.EntryId);
-                    forward = appt.Forward();
-                    forward.To = string.Join(";", _recipients);
-                    forward.Send();
+                    appt = (AppointmentItem)ns.GetItemFromID(ev.EntryId);
+                    Microsoft.Office.Interop.Outlook.Action forwardAction = appt.Actions["Forward"];
+                    object fwdObj = forwardAction.Execute();
+
+                    if (fwdObj is MailItem mail)
+                    {
+                        foreach (var recipient in _recipients)
+                            mail.Recipients.Add(recipient);
+                        mail.Recipients.ResolveAll();
+                        mail.Send();
+                        Marshal.ReleaseComObject(mail);
+                    }
+                    else if (fwdObj is MeetingItem mtg)
+                    {
+                        foreach (var recipient in _recipients)
+                            mtg.Recipients.Add(recipient);
+                        mtg.Recipients.ResolveAll();
+                        mtg.Send();
+                        Marshal.ReleaseComObject(mtg);
+                    }
+                    else
+                    {
+                        dynamic fwd = fwdObj;
+                        foreach (var recipient in _recipients)
+                            fwd.Recipients.Add(recipient);
+                        fwd.Recipients.ResolveAll();
+                        fwd.Send();
+                        Marshal.ReleaseComObject(fwdObj);
+                    }
+
+                    Marshal.ReleaseComObject(forwardAction);
                     sent++;
                 }
-                catch
+                catch (System.Exception ex)
                 {
+                    App.LogError($"Forward event '{ev.Subject}'", ex);
                     failed++;
                 }
                 finally
                 {
-                    if (forward != null) Marshal.ReleaseComObject(forward);
                     if (appt != null) Marshal.ReleaseComObject(appt);
                 }
 
@@ -443,17 +467,23 @@ public partial class MainWindow : Window
     {
         if (EventsGrid.CurrentItem is not CalendarEvent ev) return;
 
+        NameSpace? ns = null;
+        AppointmentItem? appt = null;
         try
         {
-            dynamic app = GetOutlookApp();
-            dynamic ns = app.GetNamespace("MAPI");
-            dynamic appt = ns.GetItemFromID(ev.EntryId);
+            var app = GetOutlookApp();
+            ns = app.GetNamespace("MAPI");
+            appt = (AppointmentItem)ns.GetItemFromID(ev.EntryId);
             appt.Display(false);
-            Marshal.ReleaseComObject(ns);
         }
         catch (System.Exception ex)
         {
             App.LogError("DoubleClick_Open", ex);
+        }
+        finally
+        {
+            if (appt != null) Marshal.ReleaseComObject(appt);
+            if (ns != null) Marshal.ReleaseComObject(ns);
         }
     }
 
