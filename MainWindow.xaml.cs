@@ -82,8 +82,10 @@ public partial class MainWindow : Window
             calendarItems.Sort("[Start]", false);
             calendarItems.IncludeRecurrences = false;
 
-            var from = DateFrom.SelectedDate.Value.ToString("g");
-            var to = DateTo.SelectedDate.Value.AddDays(1).ToString("g");
+            var fromDate = DateFrom.SelectedDate.Value;
+            var toDate = DateTo.SelectedDate.Value.AddDays(1);
+            var from = fromDate.ToString("g");
+            var to = toDate.ToString("g");
             var filter = $"[Start] >= '{from}' AND [End] <= '{to}'";
             var subjectFilter = SubjectFilter.Text.Trim();
 
@@ -92,7 +94,8 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    if (item is AppointmentItem appt)
+                    if (item is AppointmentItem appt
+                        && appt.Start >= fromDate && appt.Start < toDate)
                     {
                         var subject = appt.Subject;
                         if (string.IsNullOrEmpty(subjectFilter) ||
