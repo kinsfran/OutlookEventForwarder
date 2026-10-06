@@ -19,6 +19,8 @@ public class CalendarEvent : INotifyPropertyChanged
     public string Subject { get; set; } = "";
     public DateTime Start { get; set; }
     public DateTime End { get; set; }
+    public string StartDisplay => Start.ToString("yyyy-MM-dd HH:mm");
+    public string EndDisplay => End.ToString("yyyy-MM-dd HH:mm");
     public string Location { get; set; } = "";
     public string Organizer { get; set; } = "";
     public string EntryId { get; set; } = "";

@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Outlook Event Forwarder" Height="700" Width="900"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing" Loaded="Window_Loaded">
     <Window.Resources>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="16,8"/>
@@ -17,6 +18,22 @@
         </Style>
         <Style TargetType="DatePicker">
             <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <Style x:Key="FilterableColumnHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                            <Button Content="&#x25BC;" FontSize="8" Padding="4,2" Margin="4,0,0,0"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Foreground="#888" Click="FilterButton_Click"
+                                    Tag="{Binding}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -47,6 +64,8 @@
                         <TextBox x:Name="SubjectFilter" Width="180"/>
                     </StackPanel>
                     <Button x:Name="BtnLoadEvents" Content="Load Events" Click="BtnLoadEvents_Click"/>
+                    <Button x:Name="BtnClearFilters" Content="Clear Filters" Click="BtnClearFilters_Click"
+                            Margin="8,0,0,0" Visibility="Collapsed"/>
                 </WrapPanel>
             </StackPanel>
         </Border>
@@ -55,9 +74,11 @@
         <Border Grid.Row="1" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
             <Grid>
                 <DataGrid x:Name="EventsGrid" AutoGenerateColumns="False" IsReadOnly="False"
-                          CanUserAddRows="False" SelectionMode="Single" GridLinesVisibility="Horizontal"
+                          CanUserAddRows="False" SelectionMode="Extended" GridLinesVisibility="Horizontal"
                           HeadersVisibility="Column" AlternatingRowBackground="#FAFAFA"
-                          BorderThickness="0">
+                          BorderThickness="0" ColumnWidth="*"
+                          PreviewMouseLeftButtonDown="EventsGrid_PreviewMouseLeftButtonDown"
+                          MouseDoubleClick="EventsGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridCheckBoxColumn Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="40">
                             <DataGridCheckBoxColumn.HeaderTemplate>
@@ -66,18 +87,52 @@
                                 </DataTemplate>
                             </DataGridCheckBoxColumn.HeaderTemplate>
                         </DataGridCheckBoxColumn>
-                        <DataGridTextColumn Header="Subject" Binding="{Binding Subject}" Width="*" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Start" Binding="{Binding Start, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="140" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="End" Binding="{Binding End, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="140" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="150" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Organizer" Binding="{Binding Organizer}" Width="150" IsReadOnly="True"/>
+                        <DataGridTextColumn x:Name="ColSubject" Header="Subject" Binding="{Binding Subject}" Width="*" IsReadOnly="True"
+                                            HeaderStyle="{StaticResource FilterableColumnHeader}"/>
+                        <DataGridTextColumn x:Name="ColStart" Header="Start" Binding="{Binding StartDisplay}" Width="140" IsReadOnly="True"
+                                            HeaderStyle="{StaticResource FilterableColumnHeader}"/>
+                        <DataGridTextColumn x:Name="ColEnd" Header="End" Binding="{Binding EndDisplay}" Width="140" IsReadOnly="True"
+                                            HeaderStyle="{StaticResource FilterableColumnHeader}"/>
+                        <DataGridTextColumn x:Name="ColLocation" Header="Location" Binding="{Binding Location}" Width="150" IsReadOnly="True"
+                                            HeaderStyle="{StaticResource FilterableColumnHeader}"/>
+                        <DataGridTextColumn x:Name="ColOrganizer" Header="Organizer" Binding="{Binding Organizer}" Width="150" IsReadOnly="True"
+                                            HeaderStyle="{StaticResource FilterableColumnHeader}"/>
                     </DataGrid.Columns>
                 </DataGrid>
                 <TextBlock x:Name="PlaceholderText" Text="Set a date range and click 'Load Events' to see your calendar events."
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Foreground="#999" FontSize="14"/>
+                           Foreground="#999" FontSize="14" IsHitTestVisible="False"/>
             </Grid>
         </Border>
+
+        <!-- Filter Popup -->
+        <Popup x:Name="FilterPopup" StaysOpen="False" Placement="Bottom" AllowsTransparency="True">
+            <Border Background="White" BorderBrush="#CCC" BorderThickness="1" CornerRadius="4"
+                    Padding="8" MinWidth="200" MaxHeight="350">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" Opacity="0.2" ShadowDepth="2"/>
+                </Border.Effect>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Select All" FontSize="11" Padding="6,2" Click="FilterSelectAll_Click"
+                                Background="Transparent" BorderThickness="0" Foreground="#0078D4" Cursor="Hand"/>
+                        <TextBlock Text="|" Foreground="#CCC" Margin="4,0" VerticalAlignment="Center" FontSize="11"/>
+                        <Button Content="Clear All" FontSize="11" Padding="6,2" Click="FilterClearAll_Click"
+                                Background="Transparent" BorderThickness="0" Foreground="#0078D4" Cursor="Hand"/>
+                    </StackPanel>
+                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="FilterItems">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Value}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                              Margin="0,2" FontSize="12" Checked="FilterItem_Changed" Unchecked="FilterItem_Changed"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </Popup>
 
         <!-- Recipients -->
         <Border Grid.Row="2" Background="#F5F5F5" CornerRadius="6" Padding="12" Margin="0,12,0,0">
