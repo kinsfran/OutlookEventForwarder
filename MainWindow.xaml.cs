@@ -269,21 +269,35 @@ public partial class MainWindow : Window
 
     private void AddRecipient()
     {
-        var email = RecipientInput.Text.Trim();
-        if (string.IsNullOrEmpty(email)) return;
+        var input = RecipientInput.Text.Trim();
+        if (string.IsNullOrEmpty(input)) return;
 
-        if (!email.Contains('@'))
+        var emails = input.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var invalid = new List<string>();
+
+        foreach (var email in emails)
         {
-            MessageBox.Show("Please enter a valid email address.", "Invalid Email",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            if (!email.Contains('@'))
+            {
+                invalid.Add(email);
+                continue;
+            }
+            if (!_recipients.Contains(email))
+                _recipients.Add(email);
         }
 
-        if (!_recipients.Contains(email))
-            _recipients.Add(email);
+        if (invalid.Count > 0)
+            MessageBox.Show($"Skipped invalid email(s):\n{string.Join("\n", invalid)}", "Invalid Email",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
 
         RecipientInput.Text = "";
         RecipientInput.Focus();
+    }
+
+    private void RecipientInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        RecipientPlaceholder.Visibility = string.IsNullOrEmpty(RecipientInput.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void BtnAddRecipient_Click(object sender, RoutedEventArgs e) => AddRecipient();
@@ -322,7 +336,7 @@ public partial class MainWindow : Window
 
         var confirm = MessageBox.Show(
             $"Forward {selectedEvents.Count} event(s) to {_recipients.Count} recipient(s)?\n\n" +
-            $"This will send {selectedEvents.Count * _recipients.Count} forwarding email(s).",
+            $"This will send {selectedEvents.Count} forwarding email(s), each to all {_recipients.Count} recipient(s).",
             "Confirm Forward", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
         if (confirm != MessageBoxResult.Yes) return;

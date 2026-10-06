@@ -143,9 +143,16 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBox x:Name="RecipientInput" Grid.Column="0"
-                             ToolTip="Enter email address and press Add (or Enter)"
-                             KeyDown="RecipientInput_KeyDown"/>
+                    <Grid Grid.Column="0">
+                        <TextBox x:Name="RecipientInput"
+                                 ToolTip="Enter email address and press Add (or Enter)"
+                                 KeyDown="RecipientInput_KeyDown"
+                                 TextChanged="RecipientInput_TextChanged"/>
+                        <TextBlock x:Name="RecipientPlaceholder"
+                                   Text="Type an email address and press Enter (or paste multiple separated by ;)"
+                                   Foreground="#AAA" FontSize="12" IsHitTestVisible="False"
+                                   VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </Grid>
                     <Button x:Name="BtnAddRecipient" Grid.Column="1" Content="Add" Margin="8,0,0,0"
                             Click="BtnAddRecipient_Click"/>
                 </Grid>
