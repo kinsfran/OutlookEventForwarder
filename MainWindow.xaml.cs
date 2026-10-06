@@ -357,7 +357,7 @@ public partial class MainWindow : Window
                 try
                 {
                     appt = ns.GetItemFromID(ev.EntryId);
-                    forward = appt.ForwardAsVcal();
+                    forward = appt.Forward();
                     forward.To = string.Join(";", _recipients);
                     forward.Send();
                     sent++;
