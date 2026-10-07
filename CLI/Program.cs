@@ -1,11 +1,12 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Office.Interop.Outlook;
 using OutlookApp = Microsoft.Office.Interop.Outlook.Application;
 
 const string TARGET_SUBJECT = "Test meeting";
 const string RECIPIENT = "karl.insfran.cs@hitachi.com";
 
-Console.WriteLine("=== Forward Test (Actions approach) ===\n");
+Console.WriteLine("=== Forward Test (manual MailItem) ===\n");
 
 var app = new OutlookApp();
 var ns = app.GetNamespace("MAPI");
@@ -42,59 +43,38 @@ if (target == null)
 
 Console.WriteLine($"  IsRecurring: {target.IsRecurring}");
 Console.WriteLine($"  MeetingStatus: {target.MeetingStatus}");
+Console.WriteLine($"  Location: {target.Location}");
+Console.WriteLine($"  Organizer: {target.Organizer}");
 
-// List available actions
-Console.WriteLine("\n  Available actions:");
-for (int i = 1; i <= target.Actions.Count; i++)
-{
-    var a = target.Actions[i];
-    Console.WriteLine($"    [{i}] {a.Name}");
-    Marshal.ReleaseComObject(a);
-}
-
-// Forward using the built-in "Forward" action
-Console.WriteLine($"\nForwarding to {RECIPIENT} via Actions[\"Forward\"]...");
+Console.WriteLine($"\nForwarding to {RECIPIENT} (manual MailItem)...");
 try
 {
-    Microsoft.Office.Interop.Outlook.Action forwardAction = target.Actions["Forward"];
-    Console.WriteLine($"  Action found: {forwardAction.Name}");
+    var mail = (MailItem)app.CreateItem(OlItemType.olMailItem);
+    mail.Subject = "FW: " + target.Subject;
 
-    object fwdObj = forwardAction.Execute();
-    Console.WriteLine($"  Execute() OK! Type: {fwdObj.GetType().Name}");
-
-    if (fwdObj is MailItem mail)
+    var body = new StringBuilder();
+    body.AppendLine("---------- Forwarded event ----------");
+    body.AppendLine($"Subject: {target.Subject}");
+    body.AppendLine($"When: {target.Start:dddd, MMMM d, yyyy h:mm tt} - {target.End:h:mm tt}");
+    if (!string.IsNullOrEmpty(target.Location))
+        body.AppendLine($"Location: {target.Location}");
+    body.AppendLine($"Organizer: {target.Organizer}");
+    if (!string.IsNullOrEmpty(target.Body))
     {
-        Console.WriteLine("  Got MailItem");
-        mail.Recipients.Add(RECIPIENT);
-        mail.Recipients.ResolveAll();
-        Console.Write("  Sending... ");
-        mail.Send();
-        Console.WriteLine("SENT!");
-        Marshal.ReleaseComObject(mail);
-    }
-    else if (fwdObj is MeetingItem mtg)
-    {
-        Console.WriteLine("  Got MeetingItem");
-        mtg.Recipients.Add(RECIPIENT);
-        mtg.Recipients.ResolveAll();
-        Console.Write("  Sending... ");
-        mtg.Send();
-        Console.WriteLine("SENT!");
-        Marshal.ReleaseComObject(mtg);
-    }
-    else
-    {
-        Console.WriteLine($"  Unexpected type: {fwdObj.GetType().FullName}");
-        // Try dynamic as fallback
-        dynamic fwd = fwdObj;
-        fwd.Recipients.Add(RECIPIENT);
-        fwd.Recipients.ResolveAll();
-        fwd.Send();
-        Console.WriteLine("  SENT (via dynamic)!");
-        Marshal.ReleaseComObject(fwdObj);
+        body.AppendLine();
+        body.AppendLine(target.Body);
     }
 
-    Marshal.ReleaseComObject(forwardAction);
+    mail.Body = body.ToString();
+    mail.Recipients.Add(RECIPIENT);
+    mail.Recipients.ResolveAll();
+
+    Console.WriteLine($"  Subject: {mail.Subject}");
+    Console.WriteLine($"  Body preview: {mail.Body[..Math.Min(200, mail.Body.Length)]}");
+    Console.Write("  Sending... ");
+    mail.Send();
+    Console.WriteLine("SENT!");
+    Marshal.ReleaseComObject(mail);
 }
 catch (System.Exception ex)
 {

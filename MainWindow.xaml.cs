@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -354,39 +355,31 @@ public partial class MainWindow : Window
             foreach (var ev in selectedEvents)
             {
                 AppointmentItem? appt = null;
+                MailItem? mail = null;
                 try
                 {
                     appt = (AppointmentItem)ns.GetItemFromID(ev.EntryId);
-                    Microsoft.Office.Interop.Outlook.Action forwardAction = appt.Actions["Forward"];
-                    object fwdObj = forwardAction.Execute();
+                    mail = (MailItem)app.CreateItem(OlItemType.olMailItem);
+                    mail.Subject = "FW: " + appt.Subject;
 
-                    if (fwdObj is MailItem mail)
+                    var body = new StringBuilder();
+                    body.AppendLine("---------- Forwarded event ----------");
+                    body.AppendLine($"Subject: {appt.Subject}");
+                    body.AppendLine($"When: {appt.Start:dddd, MMMM d, yyyy h:mm tt} - {appt.End:h:mm tt}");
+                    if (!string.IsNullOrEmpty(appt.Location))
+                        body.AppendLine($"Location: {appt.Location}");
+                    body.AppendLine($"Organizer: {appt.Organizer}");
+                    if (!string.IsNullOrEmpty(appt.Body))
                     {
-                        foreach (var recipient in _recipients)
-                            mail.Recipients.Add(recipient);
-                        mail.Recipients.ResolveAll();
-                        mail.Send();
-                        Marshal.ReleaseComObject(mail);
+                        body.AppendLine();
+                        body.AppendLine(appt.Body);
                     }
-                    else if (fwdObj is MeetingItem mtg)
-                    {
-                        foreach (var recipient in _recipients)
-                            mtg.Recipients.Add(recipient);
-                        mtg.Recipients.ResolveAll();
-                        mtg.Send();
-                        Marshal.ReleaseComObject(mtg);
-                    }
-                    else
-                    {
-                        dynamic fwd = fwdObj;
-                        foreach (var recipient in _recipients)
-                            fwd.Recipients.Add(recipient);
-                        fwd.Recipients.ResolveAll();
-                        fwd.Send();
-                        Marshal.ReleaseComObject(fwdObj);
-                    }
+                    mail.Body = body.ToString();
 
-                    Marshal.ReleaseComObject(forwardAction);
+                    foreach (var recipient in _recipients)
+                        mail.Recipients.Add(recipient);
+                    mail.Recipients.ResolveAll();
+                    mail.Send();
                     sent++;
                 }
                 catch (System.Exception ex)
@@ -396,6 +389,7 @@ public partial class MainWindow : Window
                 }
                 finally
                 {
+                    if (mail != null) Marshal.ReleaseComObject(mail);
                     if (appt != null) Marshal.ReleaseComObject(appt);
                 }
 
